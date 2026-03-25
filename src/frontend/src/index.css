@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/assets/fonts/BricolageGrotesque.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/assets/fonts/Satoshi.woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 0.5rem;
+    --background: 0.13 0.025 255;
+    --foreground: 0.97 0.008 250;
+    --card: 0.16 0.028 250;
+    --card-foreground: 0.97 0.008 250;
+    --popover: 0.16 0.028 250;
+    --popover-foreground: 0.97 0.008 250;
+    --primary: 0.68 0.19 45;
+    --primary-foreground: 0.1 0.01 255;
+    --secondary: 0.2 0.03 250;
+    --secondary-foreground: 0.97 0.008 250;
+    --muted: 0.2 0.03 250;
+    --muted-foreground: 0.73 0.022 250;
+    --accent: 0.2 0.03 250;
+    --accent-foreground: 0.97 0.008 250;
+    --destructive: 0.62 0.22 22;
+    --destructive-foreground: 0.97 0.008 250;
+    --border: 0.25 0.038 250;
+    --input: 0.25 0.038 250;
+    --ring: 0.68 0.19 45;
+    --chart-1: 0.55 0.22 265;
+    --chart-2: 0.68 0.2 145;
+    --chart-3: 0.73 0.18 75;
+    --chart-4: 0.68 0.19 45;
+    --chart-5: 0.62 0.22 22;
+    --sidebar: 0.16 0.028 250;
+    --sidebar-foreground: 0.97 0.008 250;
+    --sidebar-primary: 0.68 0.19 45;
+    --sidebar-primary-foreground: 0.1 0.01 255;
+    --sidebar-accent: 0.2 0.03 250;
+    --sidebar-accent-foreground: 0.97 0.008 250;
+    --sidebar-border: 0.25 0.038 250;
+    --sidebar-ring: 0.68 0.19 45;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+    overscroll-behavior: none;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Satoshi", "Plus Jakarta Sans", sans-serif;
+    overscroll-behavior: none;
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+  }
+
+  #root {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    position: relative;
+  }
+}
+
+@layer utilities {
+  .nav-glass {
+    background: oklch(0.13 0.025 255 / 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .card-glow {
+    box-shadow: 0 0 0 1px oklch(0.25 0.038 250), 0 8px 32px
+      oklch(0.1 0.02 255 / 0.5);
+  }
+
+  .orange-glow {
+    box-shadow: 0 0 24px oklch(0.68 0.19 45 / 0.3);
+  }
+
+  .device-shadow {
+    filter: drop-shadow(0 2px 8px oklch(0.1 0.02 255 / 0.6));
+  }
+
+  /* Landing page needs its own scroll context */
+  .landing-scroll {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: auto;
+    position: absolute;
+    inset: 0;
+  }
+}
