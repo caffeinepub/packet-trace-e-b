@@ -7,7 +7,13 @@ import {
   useState,
 } from "react";
 import { DeviceIcon } from "./DeviceIcon";
-import type { Connection, Device, PacketAnimState } from "./types";
+import { validateCableType } from "./engine";
+import type {
+  Connection,
+  Device,
+  PacketAnimState,
+  SimulationMode,
+} from "./types";
 import { DEVICE_CONFIGS, DEVICE_SIZE } from "./types";
 
 interface SimulatorCanvasProps {
@@ -17,6 +23,8 @@ interface SimulatorCanvasProps {
   connectMode: boolean;
   connectSourceId: string | null;
   packetAnim: PacketAnimState | null;
+  simulationMode: SimulationMode;
+  currentSimStep: number;
   onDeviceSelect: (id: string | null) => void;
   onDeviceMove: (id: string, x: number, y: number) => void;
   onConnect: (sourceId: string, targetId: string) => void;
@@ -48,6 +56,20 @@ function fitDevicesToView(devices: Device[], viewW: number, viewH: number) {
   };
 }
 
+function isWirelessConnection(
+  conn: Connection,
+  devices: Map<string, Device>,
+): boolean {
+  const src = devices.get(conn.sourceId);
+  const dst = devices.get(conn.targetId);
+  if (!src || !dst) return false;
+  if (src.type === "access-point" || dst.type === "access-point") return true;
+  if (src.type === "smartphone" || dst.type === "smartphone") return true;
+  if (conn.sourcePort.toLowerCase().includes("wlan")) return true;
+  if (conn.targetPort.toLowerCase().includes("wlan")) return true;
+  return false;
+}
+
 export function SimulatorCanvas({
   devices,
   connections,
@@ -55,6 +77,8 @@ export function SimulatorCanvas({
   connectMode,
   connectSourceId,
   packetAnim,
+  simulationMode,
+  currentSimStep,
   onDeviceSelect,
   onDeviceMove,
   onConnect,
@@ -81,7 +105,6 @@ export function SimulatorCanvas({
   const pinchRef = useRef<{ pointerId: number; x: number; y: number }[]>([]);
   const lastPinchDist = useRef(0);
 
-  // Auto-fit devices on first render
   useLayoutEffect(() => {
     if (fittedRef.current || devices.length === 0) return;
     const el = containerRef.current;
@@ -277,6 +300,35 @@ export function SimulatorCanvas({
     ? devices.find((d) => d.id === connectSourceId)
     : null;
 
+  const deviceMap = new Map(devices.map((d) => [d.id, d]));
+
+  // Build active path segment set
+  const activeSegments = new Set<string>();
+  if (packetAnim?.active && packetAnim.path.length >= 2) {
+    for (let i = 0; i < packetAnim.path.length - 1; i++) {
+      const a = packetAnim.path[i];
+      const b = packetAnim.path[i + 1];
+      activeSegments.add(`${a}|${b}`);
+      activeSegments.add(`${b}|${a}`);
+    }
+  }
+
+  // In simulation mode, highlight only current step segment
+  const currentStepSegments = new Set<string>();
+  if (
+    simulationMode === "simulation" &&
+    packetAnim?.path &&
+    currentSimStep > 0
+  ) {
+    const stepIdx = currentSimStep - 1;
+    if (stepIdx < packetAnim.path.length - 1) {
+      const a = packetAnim.path[stepIdx];
+      const b = packetAnim.path[stepIdx + 1];
+      currentStepSegments.add(`${a}|${b}`);
+      currentStepSegments.add(`${b}|${a}`);
+    }
+  }
+
   return (
     <div
       ref={containerRef}
@@ -316,6 +368,13 @@ export function SimulatorCanvas({
         <rect width="100%" height="100%" fill="url(#grid)" />
       </svg>
 
+      {/* Simulation mode indicator */}
+      {simulationMode === "simulation" && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 bg-amber-500/20 border border-amber-500/50 text-amber-400 text-[10px] font-mono px-2 py-1 rounded">
+          🔴 MODO SIMULAÇÃO
+        </div>
+      )}
+
       <div
         className="absolute"
         style={{
@@ -335,18 +394,86 @@ export function SimulatorCanvas({
           {connections.map((c) => {
             const src = getDeviceCenter(c.sourceId);
             const dst = getDeviceCenter(c.targetId);
+            const srcDev = deviceMap.get(c.sourceId);
+            const dstDev = deviceMap.get(c.targetId);
+            const cableStatus =
+              srcDev && dstDev
+                ? validateCableType(srcDev.type, dstDev.type)
+                : null;
+            const overrideColor =
+              c.cableTypeOverride === "straight"
+                ? "#22C55E"
+                : c.cableTypeOverride === "crossover"
+                  ? "#F59E0B"
+                  : c.cableTypeOverride === "serial"
+                    ? "#4B9EFF"
+                    : null;
+
+            const isWifi = isWirelessConnection(c, deviceMap);
+            const wifiColor = "#8B5CF6";
+            const strokeColor = isWifi
+              ? wifiColor
+              : (overrideColor ?? cableStatus?.color ?? "#4B6A9B");
+
+            const midX = (src.x + dst.x) / 2;
+            const midY = (src.y + dst.y) / 2;
+            const isActive =
+              activeSegments.has(`${c.sourceId}|${c.targetId}`) ||
+              activeSegments.has(`${c.targetId}|${c.sourceId}`);
+            const isCurrentStep =
+              currentStepSegments.has(`${c.sourceId}|${c.targetId}`) ||
+              currentStepSegments.has(`${c.targetId}|${c.sourceId}`);
+
             return (
-              <line
-                key={c.id}
-                x1={src.x}
-                y1={src.y}
-                x2={dst.x}
-                y2={dst.y}
-                stroke="oklch(0.45 0.04 250)"
-                strokeWidth={2}
-              />
+              <g key={c.id}>
+                <line
+                  x1={src.x}
+                  y1={src.y}
+                  x2={dst.x}
+                  y2={dst.y}
+                  stroke={isCurrentStep ? "#FFD700" : strokeColor}
+                  strokeWidth={isCurrentStep ? 4 : isActive ? 3 : 2.5}
+                  strokeOpacity={isActive || isCurrentStep ? 1 : 0.8}
+                  strokeDasharray={isWifi ? "8,5" : undefined}
+                />
+                {!isWifi && (
+                  <circle
+                    cx={midX}
+                    cy={midY}
+                    r={4}
+                    fill={cableStatus?.valid ? "#22C55E" : "#EF4444"}
+                  >
+                    <title>
+                      Cabo{" "}
+                      {cableStatus?.cableType === "straight"
+                        ? "Direto"
+                        : cableStatus?.cableType === "crossover"
+                          ? "Crossover"
+                          : cableStatus?.cableType === "serial"
+                            ? "Serial"
+                            : "Incompatível"}{" "}
+                      — {cableStatus?.speed} —{" "}
+                      {cableStatus?.valid ? "Correto" : "Incorreto"}
+                    </title>
+                  </circle>
+                )}
+                {isWifi && (
+                  <text
+                    x={midX}
+                    y={midY - 2}
+                    textAnchor="middle"
+                    fill={wifiColor}
+                    fontSize={9}
+                    fontFamily="monospace"
+                    opacity={0.8}
+                  >
+                    WiFi
+                  </text>
+                )}
+              </g>
             );
           })}
+
           {connectMode && connectSource && (
             <line
               x1={connectSource.x + DEVICE_SIZE / 2}
@@ -358,21 +485,78 @@ export function SimulatorCanvas({
               strokeDasharray="6,4"
             />
           )}
-          {packetAnim?.active && packetPathPoints.length >= 2 && (
-            <motion.circle
-              r={8}
-              fill="#F47A2A"
-              stroke="#fff"
-              strokeWidth={2}
-              initial={{ cx: packetXs[0], cy: packetYs[0] }}
-              animate={{ cx: packetXs, cy: packetYs }}
-              transition={{
-                duration: Math.max(1, packetAnim.path.length) * 0.6,
-                ease: "linear",
-              }}
-              onAnimationComplete={onAnimationComplete}
-            />
-          )}
+
+          {/* Main packet ball animation - only in realtime mode */}
+          {packetAnim?.active &&
+            simulationMode === "realtime" &&
+            packetPathPoints.length >= 2 && (
+              <motion.circle
+                r={8}
+                fill="#F47A2A"
+                stroke="#fff"
+                strokeWidth={2}
+                initial={{ cx: packetXs[0], cy: packetYs[0] }}
+                animate={{ cx: packetXs, cy: packetYs }}
+                transition={{
+                  duration: Math.max(1, packetAnim.path.length) * 0.6,
+                  ease: "linear",
+                }}
+                onAnimationComplete={onAnimationComplete}
+              />
+            )}
+
+          {/* Per-cable traveling dots when active - realtime mode */}
+          {packetAnim?.active &&
+            simulationMode === "realtime" &&
+            packetAnim.path.length >= 2 &&
+            packetAnim.path.slice(0, -1).map((srcId, i) => {
+              const dstId = packetAnim.path[i + 1];
+              const src = getDeviceCenter(srcId);
+              const dst = getDeviceCenter(dstId);
+              const totalDuration = Math.max(1, packetAnim.path.length) * 0.6;
+              const segDuration = totalDuration / (packetAnim.path.length - 1);
+              return (
+                <motion.circle
+                  key={`seg-${srcId}-${dstId}`}
+                  r={5}
+                  fill="#FB923C"
+                  stroke="#fff"
+                  strokeWidth={1.5}
+                  initial={{ cx: src.x, cy: src.y, opacity: 0 }}
+                  animate={{
+                    cx: [src.x, dst.x],
+                    cy: [src.y, dst.y],
+                    opacity: [1, 1, 0],
+                  }}
+                  transition={{
+                    duration: segDuration,
+                    delay: i * segDuration,
+                    ease: "linear",
+                  }}
+                />
+              );
+            })}
+
+          {/* Simulation mode: show packet at current step */}
+          {simulationMode === "simulation" &&
+            currentSimStep > 0 &&
+            packetAnim?.path &&
+            (() => {
+              const stepIdx = currentSimStep - 1;
+              if (stepIdx >= packetAnim.path.length) return null;
+              const pos = getDeviceCenter(packetAnim.path[stepIdx]);
+              return (
+                <circle
+                  cx={pos.x}
+                  cy={pos.y}
+                  r={10}
+                  fill="#F47A2A"
+                  stroke="#FFD700"
+                  strokeWidth={2.5}
+                />
+              );
+            })()}
+
           {connections.map((c) => {
             const src = getDeviceCenter(c.sourceId);
             const dst = getDeviceCenter(c.targetId);
@@ -380,7 +564,7 @@ export function SimulatorCanvas({
               <text
                 key={`label-${c.id}`}
                 x={(src.x + dst.x) / 2}
-                y={(src.y + dst.y) / 2 - 5}
+                y={(src.y + dst.y) / 2 - 8}
                 textAnchor="middle"
                 fill="oklch(0.6 0.02 250)"
                 fontSize={9}
@@ -396,13 +580,24 @@ export function SimulatorCanvas({
           const cfg = DEVICE_CONFIGS[device.type];
           const isSelected = device.id === selectedDeviceId;
           const isConnectSource = device.id === connectSourceId;
-          const borderColor =
-            isSelected || isConnectSource ? cfg.color : `${cfg.color}55`;
-          const boxShadow = isSelected
-            ? `0 0 0 3px ${cfg.color}44, 0 4px 20px ${cfg.color}33`
-            : isConnectSource
-              ? "0 0 0 3px oklch(0.68 0.19 45 / 0.5)"
-              : "0 2px 8px rgba(0,0,0,0.5)";
+          // Highlight current step device
+          const isCurrentStepDevice =
+            simulationMode === "simulation" &&
+            currentSimStep > 0 &&
+            packetAnim?.path &&
+            packetAnim.path[currentSimStep - 1] === device.id;
+          const borderColor = isCurrentStepDevice
+            ? "#FFD700"
+            : isSelected || isConnectSource
+              ? cfg.color
+              : `${cfg.color}55`;
+          const boxShadow = isCurrentStepDevice
+            ? "0 0 0 3px #FFD70066, 0 4px 20px #FFD70033"
+            : isSelected
+              ? `0 0 0 3px ${cfg.color}44, 0 4px 20px ${cfg.color}33`
+              : isConnectSource
+                ? "0 0 0 3px oklch(0.68 0.19 45 / 0.5)"
+                : "0 2px 8px rgba(0,0,0,0.5)";
           return (
             <div
               key={device.id}
@@ -415,7 +610,7 @@ export function SimulatorCanvas({
                 height: DEVICE_SIZE,
                 cursor: connectMode ? "pointer" : "grab",
                 touchAction: "none",
-                zIndex: isSelected ? 10 : 1,
+                zIndex: isSelected || isCurrentStepDevice ? 10 : 1,
               }}
               onPointerDown={(e) => handlePointerDown(e, device.id)}
               onPointerUp={(e) => handlePointerUp(e, device.id)}
@@ -443,6 +638,26 @@ export function SimulatorCanvas({
 
       <div className="absolute bottom-4 right-4 text-[11px] text-muted-foreground bg-card/80 px-2 py-1 rounded font-mono">
         {Math.round(zoom * 100)}%
+      </div>
+
+      {/* Cable legend */}
+      <div className="absolute bottom-4 left-4 flex flex-col gap-1 bg-card/80 px-2 py-1.5 rounded text-[10px] font-mono">
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-0.5 bg-[#22C55E]" />
+          <span className="text-muted-foreground">Direto</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-0.5 bg-[#F59E0B]" />
+          <span className="text-muted-foreground">Crossover</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-0.5 bg-[#4B9EFF]" />
+          <span className="text-muted-foreground">Serial</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-0.5 border-t-2 border-dashed border-[#8B5CF6]" />
+          <span className="text-muted-foreground">WiFi</span>
+        </div>
       </div>
     </div>
   );

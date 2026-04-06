@@ -109,3 +109,29 @@
     inset: 0;
   }
 }
+
+@media print {
+  body,
+  #root {
+    overflow: visible !important;
+    position: static !important;
+    height: auto !important;
+    width: auto !important;
+    background: white !important;
+    color: black !important;
+  }
+
+  #certificate-print {
+    border: 2px solid #f47a2a !important;
+    background: white !important;
+    color: black !important;
+    page-break-inside: avoid;
+    max-width: 100%;
+  }
+
+  button,
+  nav,
+  aside {
+    display: none !important;
+  }
+}

@@ -16,6 +16,7 @@ const DEVICE_TYPES: DeviceType[] = [
   "server",
   "smartphone",
   "firewall",
+  "access-point",
 ];
 
 export function DevicePalette({
@@ -41,7 +42,7 @@ export function DevicePalette({
               data-ocid={`palette.${type}.button`}
               onClick={() => onAddDevice(type)}
               className="flex flex-col items-center gap-1 p-2 mx-1 mb-1 rounded-lg hover:bg-secondary transition-colors group"
-              title={`Add ${cfg.label}`}
+              title={`Adicionar ${cfg.label}`}
             >
               <div
                 className="w-10 h-10 rounded-lg flex items-center justify-center"

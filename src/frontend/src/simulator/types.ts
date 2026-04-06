@@ -5,12 +5,81 @@ export type DeviceType =
   | "pc"
   | "server"
   | "smartphone"
-  | "firewall";
+  | "firewall"
+  | "access-point";
 
 export interface DeviceInterface {
   name: string;
   ip: string;
   subnet: string;
+}
+
+export interface VlanConfig {
+  id: number;
+  name: string;
+  ports: string[];
+}
+
+export interface AclRule {
+  id: string;
+  action: "permit" | "deny";
+  protocol: "any" | "tcp" | "udp" | "icmp" | "ip";
+  sourceIp: string;
+  sourceMask: string;
+  destIp: string;
+  destMask: string;
+  description: string;
+}
+
+export interface RoutingEntry {
+  network: string;
+  mask: string;
+  nextHop: string;
+  interface: string;
+  protocol: "connected" | "static" | "rip" | "ospf";
+  metric: number;
+}
+
+export interface DhcpPool {
+  poolName: string;
+  networkAddr: string;
+  mask: string;
+  defaultRouter: string;
+  dnsServer: string;
+  startIp: string;
+  endIp: string;
+  leaseTime: number;
+  assignedIps: { ip: string; deviceId: string }[];
+}
+
+export interface DnsRecord {
+  hostname: string;
+  ip: string;
+  type: "A" | "AAAA";
+}
+
+export interface NatConfig {
+  insideInterface: string;
+  outsideInterface: string;
+  type: "static" | "dynamic" | "pat";
+  translations: { insideIp: string; outsideIp: string }[];
+}
+
+export interface ServiceConfig {
+  http: boolean;
+  ftp: boolean;
+  dhcp: boolean;
+  dns: boolean;
+  ospfEnabled: boolean;
+  ripEnabled: boolean;
+  ospfProcessId: number;
+  ospfAreaId: number;
+}
+
+export interface CliHistoryEntry {
+  input: string;
+  output: string;
+  timestamp: number;
 }
 
 export interface Device {
@@ -23,6 +92,16 @@ export interface Device {
   x: number;
   y: number;
   interfaces: DeviceInterface[];
+  vlans?: VlanConfig[];
+  aclRules?: AclRule[];
+  routingTable?: RoutingEntry[];
+  dhcpPools?: DhcpPool[];
+  dnsRecords?: DnsRecord[];
+  natConfig?: NatConfig;
+  services?: ServiceConfig;
+  cliHistory?: CliHistoryEntry[];
+  ipv6Address?: string;
+  ipv6Prefix?: number;
 }
 
 export interface Connection {
@@ -31,6 +110,7 @@ export interface Connection {
   targetId: string;
   sourcePort: string;
   targetPort: string;
+  cableTypeOverride?: "straight" | "crossover" | "serial";
 }
 
 export interface SavedTopology {
@@ -61,7 +141,10 @@ export interface PacketAnimState {
   active: boolean;
   path: string[];
   result: PingResult | null;
+  currentStep?: number;
 }
+
+export type SimulationMode = "realtime" | "simulation";
 
 export type DeviceConfig = {
   color: string;
@@ -70,6 +153,38 @@ export type DeviceConfig = {
   label: string;
   defaultIp: string;
 };
+
+export interface CableStatus {
+  valid: boolean;
+  cableType: "straight" | "crossover" | "serial" | "incompatible";
+  speed: string;
+  color: string;
+}
+
+export interface PacketLayerDetail {
+  layer: string;
+  fields: { label: string; value: string }[];
+}
+
+export interface PacketHopDetail {
+  hop: number;
+  fromDevice: string;
+  toDevice: string;
+  fromPort: string;
+  toPort: string;
+  timestamp: string;
+  cableStatus: CableStatus;
+  layers: PacketLayerDetail[];
+  aclEvent?: string;
+  natEvent?: string;
+  serviceEvent?: string;
+  vlanEvent?: string;
+}
+
+export interface DetailedPacketLog {
+  hops: PacketHopDetail[];
+  summary: string;
+}
 
 export const DEVICE_SIZE = 68;
 
@@ -156,5 +271,12 @@ export const DEVICE_CONFIGS: Record<DeviceType, DeviceConfig> = {
     ports: ["Fa0/0", "Fa0/1", "DMZ"],
     label: "Firewall",
     defaultIp: "10.0.0.1",
+  },
+  "access-point": {
+    color: "#8B5CF6",
+    bgColor: "#2D1B69",
+    ports: ["Fa0/0", "Wlan0", "Wlan1", "Wlan2", "Wlan3"],
+    label: "Access Point",
+    defaultIp: "192.168.1.254",
   },
 };

@@ -1,10 +1,12 @@
 import { Button } from "@/components/ui/button";
 import {
   ArrowRight,
+  BookOpen,
   CheckCircle,
   Cpu,
   GitBranch,
   Globe,
+  GraduationCap,
   Layers,
   Network,
   Play,
@@ -17,6 +19,7 @@ import { motion } from "motion/react";
 
 interface LandingPageProps {
   onOpenSimulator: () => void;
+  onOpenCourse: () => void;
 }
 
 const FEATURES = [
@@ -124,7 +127,10 @@ const STATS = [
   ["0", "Instalação"],
 ];
 
-export default function LandingPage({ onOpenSimulator }: LandingPageProps) {
+export default function LandingPage({
+  onOpenSimulator,
+  onOpenCourse,
+}: LandingPageProps) {
   const year = new Date().getFullYear();
   const utm = encodeURIComponent(window.location.hostname);
 
@@ -156,13 +162,24 @@ export default function LandingPage({ onOpenSimulator }: LandingPageProps) {
             ))}
           </div>
 
-          <Button
-            data-ocid="nav.primary_button"
-            onClick={onOpenSimulator}
-            className="bg-primary text-primary-foreground hover:opacity-90 text-sm h-8 px-4 orange-glow"
-          >
-            Abrir Simulador
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              data-ocid="nav.curso_button"
+              variant="outline"
+              onClick={onOpenCourse}
+              className="hidden sm:flex text-sm h-8 px-3 border-border hover:bg-secondary gap-1.5"
+            >
+              <BookOpen size={13} aria-hidden="true" />
+              Curso
+            </Button>
+            <Button
+              data-ocid="nav.primary_button"
+              onClick={onOpenSimulator}
+              className="bg-primary text-primary-foreground hover:opacity-90 text-sm h-8 px-4 orange-glow"
+            >
+              Abrir Simulador
+            </Button>
+          </div>
         </div>
       </nav>
 
@@ -372,6 +389,100 @@ export default function LandingPage({ onOpenSimulator }: LandingPageProps) {
                 </span>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Course Section */}
+      <section className="py-20 border-t border-border">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <motion.div
+            className="text-center mb-12"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+          >
+            <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-full px-3 py-1 mb-4">
+              <GraduationCap
+                size={12}
+                className="text-primary"
+                aria-hidden="true"
+              />
+              <span className="text-xs text-primary font-medium">
+                Curso Gratuito
+              </span>
+            </div>
+            <h2 className="font-heading text-3xl sm:text-4xl font-bold text-foreground mb-4">
+              Aprende a Dominar as Redes
+            </h2>
+            <p className="text-muted-foreground max-w-xl mx-auto">
+              Curso completo com 8 módulos, quizzes interativos e certificado de
+              conclusão. Do zero ao avançado.
+            </p>
+          </motion.div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-8">
+            {[
+              {
+                icon: BookOpen,
+                color: "#4B9EFF",
+                bg: "#0E2B5C",
+                title: "8 Módulos Completos",
+                desc: "Da introdução às redes até topologias avançadas com VLANs, NAT e OSPF.",
+              },
+              {
+                icon: GraduationCap,
+                color: "#F47A2A",
+                bg: "#3A1500",
+                title: "Quizzes Interativos",
+                desc: "Testa os teus conhecimentos com perguntas de escolha múltipla no fim de cada módulo.",
+              },
+              {
+                icon: GraduationCap,
+                color: "#22C55E",
+                bg: "#0B3A1F",
+                title: "Certificado de Conclusão",
+                desc: "Recebe um certificado ao completares todos os módulos com aprovação.",
+              },
+            ].map((item, i) => (
+              <motion.div
+                key={item.title}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+                className="p-5 rounded-xl border border-border bg-card card-glow"
+              >
+                <div
+                  className="w-10 h-10 rounded-lg flex items-center justify-center mb-4"
+                  style={{
+                    backgroundColor: item.bg,
+                    border: `1px solid ${item.color}33`,
+                  }}
+                >
+                  <item.icon
+                    size={20}
+                    style={{ color: item.color }}
+                    aria-hidden="true"
+                  />
+                </div>
+                <h3 className="font-heading font-semibold text-foreground mb-2">
+                  {item.title}
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {item.desc}
+                </p>
+              </motion.div>
+            ))}
+          </div>
+          <div className="text-center">
+            <Button
+              data-ocid="course.cta_button"
+              onClick={onOpenCourse}
+              className="bg-primary text-primary-foreground hover:opacity-90 h-11 px-8 text-base orange-glow"
+            >
+              Começar o Curso Gratuito
+              <ArrowRight size={16} className="ml-2" aria-hidden="true" />
+            </Button>
           </div>
         </div>
       </section>

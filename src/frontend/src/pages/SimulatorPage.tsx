@@ -21,31 +21,34 @@ import {
   Link2,
   LogIn,
   LogOut,
+  Play,
   Plus,
   RefreshCw,
   Save,
   Trash2,
+  ZapOff,
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
+import { ConnectionDialog } from "../simulator/ConnectionDialog";
 import { DeviceConfigPanel } from "../simulator/DeviceConfigPanel";
 import { DevicePalette } from "../simulator/DevicePalette";
 import { PacketSimPanel } from "../simulator/PacketSimPanel";
 import { SimulatorCanvas } from "../simulator/SimulatorCanvas";
-import { generateId } from "../simulator/engine";
+import { generateId, simulatePing } from "../simulator/engine";
 import type {
   Connection,
   Device,
   PacketAnimState,
   PingResult,
   SavedTopology,
+  SimulationMode,
 } from "../simulator/types";
 import { DEVICE_CONFIGS } from "../simulator/types";
 
 const STORAGE_KEY = "pkt-topologies";
 
-// Compact positions that fit well on mobile screens
 function makeSampleTopology(): {
   devices: Device[];
   connections: Connection[];
@@ -104,6 +107,16 @@ function makeSampleTopology(): {
     x: 240,
     y: 260,
     interfaces: [],
+    services: {
+      http: true,
+      ftp: true,
+      dhcp: false,
+      dns: false,
+      ospfEnabled: false,
+      ripEnabled: false,
+      ospfProcessId: 1,
+      ospfAreaId: 0,
+    },
   };
   const c1: Connection = {
     id: "c1",
@@ -152,6 +165,10 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [connectMode, setConnectMode] = useState(false);
   const [connectSourceId, setConnectSourceId] = useState<string | null>(null);
+  const [pendingConnect, setPendingConnect] = useState<{
+    srcId: string;
+    dstId: string;
+  } | null>(null);
   const [packetAnim, setPacketAnim] = useState<PacketAnimState | null>(null);
   const [lastResult, setLastResult] = useState<PingResult | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -159,6 +176,11 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
   const [topoName, setTopoName] = useState("Minha Topologia");
+  const [simulationMode, setSimulationMode] =
+    useState<SimulationMode>("realtime");
+  const [currentSimStep, setCurrentSimStep] = useState(0);
+  const [simPaused, setSimPaused] = useState(false);
+  const [simPath, setSimPath] = useState<string[]>([]);
   const [savedTopologies, setSavedTopologies] = useState<SavedTopology[]>(
     () => {
       try {
@@ -223,30 +245,33 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
         setConnectSourceId(null);
         return;
       }
-      const src = devices.find((d) => d.id === srcId)!;
-      const dst = devices.find((d) => d.id === dstId)!;
-      const srcPorts = DEVICE_CONFIGS[src.type].ports;
-      const dstPorts = DEVICE_CONFIGS[dst.type].ports;
-      const usedSrc = connections
-        .filter((c) => c.sourceId === srcId)
-        .map((c) => c.sourcePort);
-      const usedDst = connections
-        .filter((c) => c.targetId === dstId)
-        .map((c) => c.targetPort);
-      const srcPort = srcPorts.find((p) => !usedSrc.includes(p)) || srcPorts[0];
-      const dstPort = dstPorts.find((p) => !usedDst.includes(p)) || dstPorts[0];
+      setConnectSourceId(null);
+      setPendingConnect({ srcId, dstId });
+    },
+    [connections],
+  );
+
+  const handleConnectionConfirm = useCallback(
+    (
+      srcPort: string,
+      dstPort: string,
+      cableType: "straight" | "crossover" | "serial" | "auto",
+    ) => {
+      if (!pendingConnect) return;
+      const { srcId, dstId } = pendingConnect;
       const conn: Connection = {
         id: generateId(),
         sourceId: srcId,
         targetId: dstId,
         sourcePort: srcPort,
         targetPort: dstPort,
+        ...(cableType !== "auto" ? { cableTypeOverride: cableType } : {}),
       };
       setConnections((prev) => [...prev, conn]);
-      setConnectSourceId(null);
+      setPendingConnect(null);
       toast.success(`Conectado: ${srcPort} ↔ ${dstPort}`);
     },
-    [connections, devices],
+    [pendingConnect],
   );
 
   const handleSaveDevice = useCallback((updated: Device) => {
@@ -264,15 +289,59 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
     toast.success("Dispositivo removido");
   }, []);
 
-  const handleStartSim = useCallback((path: string[], result: PingResult) => {
-    if (path.length >= 2) setPacketAnim({ active: true, path, result });
-    else setLastResult(result);
-  }, []);
+  const handleStartSim = useCallback(
+    (path: string[], result: PingResult) => {
+      if (simulationMode === "simulation") {
+        setSimPath(path);
+        setCurrentSimStep(path.length > 0 ? 1 : 0);
+        setSimPaused(true);
+        setLastResult(result);
+        if (path.length >= 2)
+          setPacketAnim({ active: false, path, result, currentStep: 1 });
+        if (result.success)
+          toast("🔴 Modo Simulação: Use 'Próximo Passo' para avançar");
+      } else {
+        if (path.length >= 2) setPacketAnim({ active: true, path, result });
+        else setLastResult(result);
+        setSimPath(path);
+        setCurrentSimStep(0);
+        setSimPaused(false);
+      }
+    },
+    [simulationMode],
+  );
+
+  const handleNextStep = useCallback(() => {
+    if (!simPath.length) return;
+    const next = currentSimStep + 1;
+    if (next > simPath.length) {
+      setSimPaused(false);
+      toast.success("Simulação concluída");
+      return;
+    }
+    setCurrentSimStep(next);
+    setPacketAnim((prev) => (prev ? { ...prev, currentStep: next } : null));
+  }, [simPath, currentSimStep]);
 
   const handleAnimationComplete = useCallback(() => {
     if (packetAnim?.result) setLastResult(packetAnim.result);
     setPacketAnim(null);
   }, [packetAnim]);
+
+  const handlePingFromCLI = useCallback(
+    (targetIp: string) => {
+      if (!selectedDevice) return;
+      const sim = simulatePing(
+        devices,
+        connections,
+        selectedDevice.id,
+        targetIp,
+      );
+      handleStartSim(sim.path, sim.result);
+      if (!sim.result.success) toast.error(sim.result.error || "Falha no ping");
+    },
+    [selectedDevice, devices, connections, handleStartSim],
+  );
 
   const handleSaveTopology = () => {
     const topo: SavedTopology = {
@@ -327,17 +396,35 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
       toast("Modo de conexão ativado — toque no dispositivo de origem");
   };
 
+  const toggleSimulationMode = () => {
+    const next: SimulationMode =
+      simulationMode === "realtime" ? "simulation" : "realtime";
+    setSimulationMode(next);
+    setCurrentSimStep(0);
+    setSimPaused(false);
+    setSimPath([]);
+    setPacketAnim(null);
+    toast(
+      next === "simulation"
+        ? "🔴 Modo Simulação: passo a passo"
+        : "⏱ Modo Tempo Real",
+    );
+  };
+
   const isLoggingIn = loginStatus === "logging-in";
 
   const configPanel = selectedDevice ? (
     <DeviceConfigPanel
       device={selectedDevice}
+      devices={devices}
+      connections={connections}
       onSave={handleSaveDevice}
       onClose={() => {
         setSelectedDeviceId(null);
         setConfigSheetOpen(false);
       }}
       onDelete={handleDeleteDevice}
+      onPingRequest={handlePingFromCLI}
     />
   ) : null;
 
@@ -345,14 +432,14 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
     <div className="flex flex-col h-full bg-background overflow-hidden">
       <Toaster theme="dark" />
 
-      <header className="flex items-center gap-1 px-2 py-1.5 border-b border-border bg-card shrink-0">
+      <header className="flex items-center gap-1 px-2 py-1.5 border-b border-border bg-card shrink-0 flex-wrap">
         <button
           type="button"
           data-ocid="toolbar.back.button"
           onClick={onBack}
-          className="flex items-center gap-1 text-muted-foreground hover:text-foreground text-sm px-2 py-1 rounded hover:bg-secondary mr-1"
+          className="flex items-center gap-1 text-muted-foreground hover:text-foreground text-xs px-2 py-1 rounded hover:bg-secondary mr-1"
         >
-          <ChevronLeft size={14} />
+          <ChevronLeft size={13} />
           <span className="hidden sm:inline">Início</span>
         </button>
 
@@ -363,8 +450,9 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
             variant="outline"
             onClick={handleNewTopology}
             className="h-7 text-xs px-2"
+            title="Nova topologia"
           >
-            <RefreshCw size={12} />
+            <RefreshCw size={11} />
           </Button>
           <Button
             data-ocid="toolbar.save.button"
@@ -372,8 +460,9 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
             variant="outline"
             onClick={() => setSaveDialogOpen(true)}
             className="h-7 text-xs px-2"
+            title="Salvar"
           >
-            <Save size={12} />
+            <Save size={11} />
           </Button>
           <Button
             data-ocid="toolbar.load.button"
@@ -381,8 +470,9 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
             variant="outline"
             onClick={() => setLoadDialogOpen(true)}
             className="h-7 text-xs px-2"
+            title="Carregar"
           >
-            <FolderOpen size={12} />
+            <FolderOpen size={11} />
           </Button>
           <Button
             data-ocid="toolbar.clear.button"
@@ -390,26 +480,45 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
             variant="outline"
             onClick={handleClear}
             className="h-7 text-xs px-2 text-destructive hover:text-destructive"
+            title="Limpar canvas"
           >
-            <Trash2 size={12} />
+            <Trash2 size={11} />
           </Button>
         </div>
 
-        <div className="h-5 w-px bg-border mx-1" />
+        <div className="h-5 w-px bg-border mx-0.5" />
 
         <button
           type="button"
           data-ocid="toolbar.connect.toggle"
           onClick={toggleConnectMode}
-          className={`flex items-center gap-1 px-2 py-1 rounded text-xs h-7 transition-colors ${
-            connectMode
-              ? "bg-primary text-primary-foreground"
-              : "border border-border text-muted-foreground hover:text-foreground"
-          }`}
+          className={`flex items-center gap-1 px-2 py-1 rounded text-xs h-7 transition-colors ${connectMode ? "bg-primary text-primary-foreground" : "border border-border text-muted-foreground hover:text-foreground"}`}
+          title="Modo de conexão"
         >
-          <Link2 size={12} />
+          <Link2 size={11} />
           <span className="hidden sm:inline">
             {connectMode ? (connectSourceId ? "Destino" : "Origem") : "Ligar"}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          data-ocid="toolbar.simulation.toggle"
+          onClick={toggleSimulationMode}
+          className={`flex items-center gap-1 px-2 py-1 rounded text-xs h-7 transition-colors ${simulationMode === "simulation" ? "bg-amber-500/20 border border-amber-500/50 text-amber-400" : "border border-border text-muted-foreground hover:text-foreground"}`}
+          title={
+            simulationMode === "simulation"
+              ? "Modo Simulação"
+              : "Modo Tempo Real"
+          }
+        >
+          {simulationMode === "simulation" ? (
+            <ZapOff size={11} />
+          ) : (
+            <Play size={11} />
+          )}
+          <span className="hidden md:inline">
+            {simulationMode === "simulation" ? "Simulação" : "Tempo Real"}
           </span>
         </button>
 
@@ -420,7 +529,7 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
             onClick={() => handleDeleteDevice(selectedDeviceId)}
             className="flex items-center gap-1 px-2 py-1 rounded text-xs h-7 border border-destructive/50 text-destructive hover:bg-destructive/10"
           >
-            <Trash2 size={12} />
+            <Trash2 size={11} />
           </button>
         )}
 
@@ -432,8 +541,9 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
             onClick={() => (identity ? clear() : login())}
             className="h-7 text-xs px-2"
             disabled={isLoggingIn}
+            title={identity ? "Sair" : "Entrar"}
           >
-            {identity ? <LogOut size={12} /> : <LogIn size={12} />}
+            {identity ? <LogOut size={11} /> : <LogIn size={11} />}
           </Button>
           <Button
             data-ocid="palette.add.button"
@@ -441,7 +551,7 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
             className="h-7 text-xs bg-primary text-primary-foreground hover:opacity-90 md:hidden px-2"
             onClick={() => setPaletteOpen((p) => !p)}
           >
-            <Plus size={12} />
+            <Plus size={11} />
           </Button>
         </div>
       </header>
@@ -461,6 +571,8 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
             connectMode={connectMode}
             connectSourceId={connectSourceId}
             packetAnim={packetAnim}
+            simulationMode={simulationMode}
+            currentSimStep={currentSimStep}
             onDeviceSelect={handleDeviceSelect}
             onDeviceMove={handleDeviceMove}
             onConnect={handleConnect}
@@ -472,7 +584,11 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
             connections={connections}
             isAnimating={packetAnim?.active ?? false}
             lastResult={lastResult}
+            simulationMode={simulationMode}
+            currentSimStep={currentSimStep}
+            simPaused={simPaused}
             onStartSim={handleStartSim}
+            onNextStep={handleNextStep}
           />
         </div>
 
@@ -501,6 +617,23 @@ export default function SimulatorPage({ onBack }: SimulatorPageProps) {
           </SheetContent>
         </Sheet>
       )}
+
+      {pendingConnect &&
+        (() => {
+          const srcDev = devices.find((d) => d.id === pendingConnect.srcId);
+          const dstDev = devices.find((d) => d.id === pendingConnect.dstId);
+          if (!srcDev || !dstDev) return null;
+          return (
+            <ConnectionDialog
+              open={true}
+              srcDevice={srcDev}
+              dstDevice={dstDev}
+              connections={connections}
+              onConfirm={handleConnectionConfirm}
+              onCancel={() => setPendingConnect(null)}
+            />
+          );
+        })()}
 
       <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
         <DialogContent data-ocid="save.dialog" className="sm:max-w-sm">

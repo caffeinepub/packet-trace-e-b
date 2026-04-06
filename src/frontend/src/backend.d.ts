@@ -34,6 +34,26 @@ export interface TopologySummary {
 
 export type UserRole = { admin: null } | { user: null } | { guest: null };
 
+export interface ModuleProgressInput {
+    moduleId: bigint;
+    score: bigint;
+    completed: boolean;
+}
+
+export interface ModuleProgress {
+    moduleId: bigint;
+    score: bigint;
+    completed: boolean;
+    completedAt: bigint;
+}
+
+export interface CourseProgress {
+    owner: Principal;
+    modules: ModuleProgress[];
+    certificateEarned: boolean;
+    updatedAt: bigint;
+}
+
 export interface backendInterface {
     _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
     getCallerUserRole(): Promise<UserRole>;
@@ -44,4 +64,8 @@ export interface backendInterface {
     listTopologies(): Promise<TopologySummary[]>;
     updateTopology(id: bigint, input: TopologyInput): Promise<boolean>;
     deleteTopology(id: bigint): Promise<boolean>;
+    saveModuleProgress(input: ModuleProgressInput): Promise<boolean>;
+    getCourseProgress(): Promise<CourseProgress | null>;
+    hasCertificate(): Promise<boolean>;
+    resetCourseProgress(): Promise<boolean>;
 }

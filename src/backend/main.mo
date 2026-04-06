@@ -8,6 +8,7 @@ actor {
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
 
+  // ===== TOPOLOGY TYPES =====
   public type Topology = {
     id : Nat;
     owner : Principal;
@@ -85,10 +86,84 @@ actor {
     switch (topologies.get(id)) {
       case (?t) {
         if (t.owner != caller) return false;
-        ignore topologies.remove(id);
+        topologies.remove(id);
         true
       };
       case null { false };
     }
+  };
+
+  // ===== COURSE PROGRESS TYPES =====
+  public type ModuleProgress = {
+    moduleId : Nat;
+    score : Nat;
+    completed : Bool;
+    completedAt : Int;
+  };
+
+  public type CourseProgress = {
+    owner : Principal;
+    modules : [ModuleProgress];
+    certificateEarned : Bool;
+    updatedAt : Int;
+  };
+
+  public type ModuleProgressInput = {
+    moduleId : Nat;
+    score : Nat;
+    completed : Bool;
+  };
+
+  let courseProgress = Map.empty<Principal, CourseProgress>();
+  let TOTAL_MODULES : Nat = 8;
+  let PASS_SCORE : Nat = 70;
+
+  public shared ({ caller }) func saveModuleProgress(input : ModuleProgressInput) : async Bool {
+    if (caller.isAnonymous()) { return false };
+    let existing = switch (courseProgress.get(caller)) {
+      case (?p) { p.modules };
+      case null { [] };
+    };
+    // Filter out old entry for this module
+    let filtered = existing.vals()
+      .filter(func(m : ModuleProgress) : Bool { m.moduleId != input.moduleId })
+      .toArray();
+    let newMod : ModuleProgress = {
+      moduleId = input.moduleId;
+      score = input.score;
+      completed = input.completed;
+      completedAt = Time.now();
+    };
+    // Append new entry
+    let updated = filtered.vals().concat([newMod].vals()).toArray();
+    let allDone = updated.size() == TOTAL_MODULES and updated.vals().all(
+      func(m : ModuleProgress) : Bool { m.completed and m.score >= PASS_SCORE }
+    );
+    courseProgress.add(caller, {
+      owner = caller;
+      modules = updated;
+      certificateEarned = allDone;
+      updatedAt = Time.now();
+    });
+    true
+  };
+
+  public query ({ caller }) func getCourseProgress() : async ?CourseProgress {
+    if (caller.isAnonymous()) { return null };
+    courseProgress.get(caller)
+  };
+
+  public query ({ caller }) func hasCertificate() : async Bool {
+    if (caller.isAnonymous()) { return false };
+    switch (courseProgress.get(caller)) {
+      case (?p) { p.certificateEarned };
+      case null { false };
+    }
+  };
+
+  public shared ({ caller }) func resetCourseProgress() : async Bool {
+    if (caller.isAnonymous()) { return false };
+    courseProgress.remove(caller);
+    true
   };
 };
